@@ -3,6 +3,6 @@ openai
 speechrecognition
 pyttsx3
 deep-translator
-langchain
+langchain-community
 python-dotenv
 google-generativeai

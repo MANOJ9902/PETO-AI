@@ -1,9 +1,10 @@
 Flask
 openai
-SpeechRecognition
+speech_recognition
 pyttsx3
-deep-translator
-langchain
-langchain-openai
-Pillow
+deep_translator
+python-dotenv
 google-generativeai
+pyaudio
+qdrant
+langchain-community

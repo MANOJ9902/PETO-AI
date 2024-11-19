@@ -5,56 +5,109 @@ import pyttsx3
 from deep_translator import GoogleTranslator
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationChain
-from langchain_openai import ChatOpenAI
+from langchain.chat_models import ChatOpenAI
 import logging
-import google.generativeai as genai
-from PIL import Image
+from dotenv import load_dotenv
+import os
+# from Bio import Entrez
 
 # Initialize logging
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
-# Replace 'your_openai_api_key' with your actual OpenAI API key
-openai.api_key = 'sk-proj-74nl78OByS2CNvepXP1RT3BlbkFJrchUmV0pF6qkRd6vCnM7'
+# Load environment variables from .env file
+load_dotenv()
 
-# Manually assign the API key (replace with your actual API key)
-GOOGLE_API_KEY = "AIzaSyDmJCH8sJZiVxZ6-nYkycKMsrgjPJx2xbk"
+# Configure API keys
+OPENAI_API_KEY =  ''
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+
+# # Set up Qdrant client
+# qdrant_client = QdrantClient(":memory:")  # Use ":memory:" for local in-memory storage
+# embedding_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+# vectorstore = Qdrant(client=qdrant_client, collection_name="chat_history", embeddings=embedding_model)
+
+
+# Import and configure Google's generative AI after installing
+try:
+    import google.generativeai as genai
+    genai.configure(api_key=GOOGLE_API_KEY)
+except ImportError:
+    print("Please install google-generativeai: pip install google-generativeai")
+    raise
+
+# Initialize API clients
+openai.api_key = OPENAI_API_KEY
 genai.configure(api_key=GOOGLE_API_KEY)
+
+# Set up environment variables as a backup
+os.environ['GOOGLE_API_KEY'] = GOOGLE_API_KEY
+
 
 class ChatBot:
     def __init__(self):
-        self.input_prompt = """
-            Welcome to the Pet Care ChatBot. Ask any questions related to pet care and pets!
-            """
+        self.input_prompt = "Welcome to the Pet Care ChatBot. Ask any questions related to pet care and pets!"
         self.memory = ConversationBufferMemory()
-        self.openai_llm = ChatOpenAI(api_key=openai.api_key)
+        self.openai_llm = ChatOpenAI(api_key=OPENAI_API_KEY)
         self.conversation_chain = ConversationChain(llm=self.openai_llm, memory=self.memory)
         self.recognizer = sr.Recognizer()
         self.tts_engine = pyttsx3.init()
+        logging.info("Text-to-speech engine initialized successfully.")
 
     def translate_text(self, text, target_language):
-        translated_text = GoogleTranslator(source='auto', target=target_language).translate(text)
-        return translated_text
+        try:
+            translated_text = GoogleTranslator(source='auto', target=target_language).translate(text)
+            return translated_text
+        except Exception as e:
+            logging.error(f"Translation error: {e}")
+            return text
+
+    # def fetch_papers(pmids):
+    #     """
+    #     Fetch details of papers given a list of PMIDs.
+    #     """
+    #     papers = []
+    #     try:
+    #         handle = Entrez.efetch(db="pubmed", id=",".join(pmids), retmode="xml")
+    #         records = Entrez.read(handle)
+    #         handle.close()
+    #
+    #         for record in records['PubmedArticle']:
+    #             paper_info = {}
+    #             paper_info['pmid'] = record['MedlineCitation']['PMID']
+    #             pmc_ids = [id_elem for id_elem in record['PubmedData']['ArticleIdList'] if
+    #                        id_elem.attributes['IdType'] == 'pmc']
+    #             paper_info['pmc'] = pmc_ids[0] if pmc_ids else 'N/A'
+    #             paper_info['title'] = record['MedlineCitation']['Article']['ArticleTitle']
+    #             paper_info['abstract'] = record['MedlineCitation']['Article']['Abstract']['AbstractText'][
+    #                 0] if 'Abstract' in record['MedlineCitation']['Article'] else 'N/A'
+    #             paper_info['keywords'] = [kw['DescriptorName'] for kw in
+    #                                       record['MedlineCitation'].get('MeshHeadingList', [])]
+    #             papers.append(paper_info)
+    #     except Exception as e:
+    #         print(f"An error occurred while fetching papers: {e}")
+    #
+    #     return papers
 
     def chat(self, msg, target_lang='en'):
-        logging.debug(f"Original message: {msg}")
-        if target_lang != 'en':
-            msg = self.translate_text(msg, 'en')  # Translate to English for processing
-            logging.debug(f"Translated message to English: {msg}")
+        try:
+            logging.debug(f"Original message: {msg}")
+            if target_lang != 'en':
+                msg = self.translate_text(msg, 'en')
+                logging.debug(f"Translated message to English: {msg}")
 
-        response = self.invoke(input=self.input_prompt + "\n" + msg)
-        logging.debug(f"Response from OpenAI: {response}")
+            response = self.conversation_chain.invoke(input=self.input_prompt + "\n" + msg)
+            logging.debug(f"Response from OpenAI: {response}")
 
-        if target_lang != 'en':
-            response['response'] = self.translate_text(response['response'], target_lang)  # Translate response back to target language
-            logging.debug(f"Translated response to target language: {response['response']}")
+            if target_lang != 'en':
+                response['response'] = self.translate_text(response['response'], target_lang)
+                logging.debug(f"Translated response to target language: {response['response']}")
 
-        return jsonify(response)
-
-    def invoke(self, input):
-        response = self.conversation_chain.invoke(input=input)
-        return response
+            return jsonify(response)
+        except Exception as e:
+            logging.error(f"Chat error: {e}")
+            return jsonify({"error": str(e)})
 
     def voice_to_text(self):
         with sr.Microphone() as source:
@@ -65,29 +118,38 @@ class ChatBot:
                 logging.info(f"Recognized text: {text}")
                 return text
             except sr.UnknownValueError:
-                logging.error("Google Speech Recognition could not understand the audio")
+                logging.error("Could not understand the audio")
             except sr.RequestError as e:
-                logging.error(f"Could not request results from Google Speech Recognition service; {e}")
+                logging.error(f"Error with Google Speech Recognition service; {e}")
         return None
 
     def text_to_speech(self, text):
-        self.tts_engine.say(text)
-        self.tts_engine.runAndWait()
+        try:
+            logging.info(f"Converting text to speech: {text}")
+            self.tts_engine.say(text)
+            self.tts_engine.runAndWait()
+        except Exception as e:
+            logging.error(f"Text-to-speech error: {e}")
+
 
 # Initialize ChatBot instance
 chatbot = ChatBot()
 
-# Function to load Google Gemini Pro Vision API And get response
+
 def get_gemini_response(input_text, image_parts, prompt):
-    model = genai.GenerativeModel('gemini-pro-vision')
+    # Update to use the new model, 'gemini-1.5-flash' instead of the deprecated 'gemini-pro-vision'
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    # Generate content with the new model
     response = model.generate_content([input_text, image_parts[0], prompt])
+
+    # Return the generated response text
     return response.text
+
 
 def input_image_setup(file_storage):
     if file_storage is not None:
-        # Read the file into bytes
         bytes_data = file_storage.read()
-
         image_parts = [
             {
                 "mime_type": file_storage.content_type,
@@ -95,55 +157,55 @@ def input_image_setup(file_storage):
             }
         ]
         return image_parts
-    else:
-        raise FileNotFoundError("No file uploaded")
+    raise FileNotFoundError("No file uploaded")
+
 
 @app.route("/")
 def home():
     return render_template('index.html')
 
+
 @app.route("/get", methods=["POST"])
 def chat():
-    msg = request.form["msg"]
-    target_lang = request.form.get("lang", "en")  # Default to English if lang parameter is not provided
-    response = chatbot.chat(msg, target_lang)
-    return response
+    try:
+        msg = request.form["msg"]
+        target_lang = request.form.get("lang", "en")
+        response = chatbot.chat(msg, target_lang)
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 
 @app.route("/voice", methods=["POST"])
 def voice():
     text = chatbot.voice_to_text()
     if text:
-        target_lang = request.form.get("lang", "en")  # Default to English if lang parameter is not provided
+        target_lang = request.form.get("lang", "en")
         response = chatbot.chat(text, target_lang)
         chatbot.text_to_speech(response.get_json()["response"])
         return response
-    else:
-        return jsonify({"response": "Could not understand audio."})
+    return jsonify({"response": "Could not understand audio."})
+
 
 @app.route('/chatbot', methods=['GET', 'POST'])
 def chatbot_interface():
-    if request.method == 'POST':
-        if request.form['submit_button'] == 'Text Input':
-            msg = request.form['msg']
-            target_lang = request.form.get('lang', 'en')  # Default to English if lang parameter is not provided
-            response = chatbot.chat(msg, target_lang)
-            return render_template('chat.html', response=response)
-        elif request.form['submit_button'] == 'Voice Input':
-            # Perform voice input processing
-            return render_template('voice.html')
-    else:
-        return render_template('chat.html')
+    try:
+        if request.method == 'POST':
+            if request.form['submit_button'] == 'Text Input':
+                msg = request.form['msg']
+                target_lang = request.form.get('lang', 'en')
+                response = chatbot.chat(msg, target_lang)
+                return render_template('chat.html', response=response)
+            elif request.form['submit_button'] == 'Voice Input':
+                return render_template('voice.html')
+        else:
+            return render_template('chat.html')
+    except Exception as e:
+        return render_template('error.html', error=str(e))
 
-@app.route("/about")
-def about():
-    return render_template('about.html')
 
-@app.route("/contact")
-def contact():
-    return render_template('contact.html')
 @app.route('/disease', methods=['GET', 'POST'])
 def disease():
-    # Handle POST request to process form data
     if request.method == 'POST':
         input_text = request.form['input']
         uploaded_file = request.files['file']
@@ -165,14 +227,14 @@ def disease():
             """
             response = get_gemini_response(input_text, image_parts, prompt)
 
-            target_lang = request.form.get("lang", "en")  # Default to English if lang parameter is not provided
+            target_lang = request.form.get("lang", "en")
             if target_lang != 'en':
                 response = chatbot.translate_text(response, target_lang)
 
-        return render_template('disease.html', response=response)
+            return render_template('disease.html', response=response)
 
-    # Handle GET request to render the initial form
     return render_template('disease.html')
 
+
 if __name__ == '__main__':
-    app.run(debug=True, port=8000)
+    app.run(debug=True, port=8000, threaded=False)

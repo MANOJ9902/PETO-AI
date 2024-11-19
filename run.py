@@ -17,8 +17,8 @@ app = Flask(__name__)
 load_dotenv()
 
 # Configure API keys
-OPENAI_API_KEY =  ''
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+OPENAI_API_KEY =  'sk-proj-kogDv8AdIn3QAUaCLfKNT3BlbkFJyTnzROdCZ80hRkCV8t2U'
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', 'AIzaSyCzhw6JVg89YebSfC031oGddSQZj9BcEsY')
 
 # Import and configure Google's generative AI after installing
 try:

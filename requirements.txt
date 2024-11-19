@@ -1,6 +1,6 @@
 Flask
 openai
-speech_recognition
+SpeechRecognition
 pyttsx3
 deep_translator
 python-dotenv

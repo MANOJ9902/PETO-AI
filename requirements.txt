@@ -6,5 +6,5 @@ deep_translator
 python-dotenv
 google-generativeai
 pyaudio
-qdrant
+qdrant-client
 langchain-community
